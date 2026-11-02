@@ -16,15 +16,26 @@ jobs:
       - name: Install OpenTelemetry SDK
         run: python -m pip install -r requirements.txt
       - name: A-level console spans
-        run: python basic_console.py | tee evidence/basic_console.txt
+        run: |
+          set -o pipefail
+          python basic_console.py | tee evidence/basic_console.txt
+      - name: Match Collector UID to writable evidence directory
+        run: |
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
       - name: Start Dockerized Collector
         run: |
           docker compose up -d
+          sleep 2
           docker compose ps
+          docker compose ps --status running --services | grep -x otel-collector
       - name: Send OTLP traces and logs
-        run: python otel_app.py | tee evidence/app_output.txt
+        run: |
+          set -o pipefail
+          python otel_app.py | tee evidence/app_output.txt
       - name: Verify both pipelines and correlation
         run: |
+          set -o pipefail
           sleep 5
           python verify_evidence.py | tee evidence/verification.txt
       - name: Show Collector output
