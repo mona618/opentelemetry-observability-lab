@@ -1,6 +1,7 @@
 services:
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.164.0
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     ports:
       - "127.0.0.1:4317:4317"
