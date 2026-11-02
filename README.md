@@ -43,8 +43,11 @@ workflow sets those variables automatically.
 The [Actions workflow](.github/workflows/otel-lab.yml) performs the same steps
 on an Ubuntu runner with Docker Compose. It saves console output, Collector
 logs, file exports, and a verification summary as the `otel-evidence` artifact.
-The verifier checks that the three spans exist and that exported spans and logs
-share a trace ID. A failed assertion fails the workflow.
+The verifier checks that the three spans exist and that every log's
+`(traceId, spanId)` pair resolves to an exported span in the same trace. Missing,
+zero, unknown, or mismatched context fails the gate. Regression checks also
+confirm that an unknown span and a span belonging to another trace are rejected.
+A failed assertion fails the workflow.
 
 This is a learning setup. The debug exporter and local JSON files make the
 signals visible, but a production system would route them to a secured and

@@ -19,11 +19,39 @@ def records(path: Path, group_key: str, scope_key: str, item_key: str) -> list[d
     return result
 
 
-def normalized_trace_id(value: str) -> str:
-    """OTLP JSON uses base64 for bytes; some exporters emit hex instead."""
-    if len(value) == 32 and all(char in "0123456789abcdefABCDEF" for char in value):
-        return value.lower()
-    return base64.b64decode(value).hex()
+def normalized_id(value: str, byte_length: int) -> str:
+    """Normalize an OTLP hex/base64 ID and reject missing or zero context."""
+    if not isinstance(value, str) or not value:
+        raise ValueError("Missing telemetry context ID")
+    text = value.removeprefix("0x")
+    if len(text) == byte_length * 2 and all(
+        char in "0123456789abcdefABCDEF" for char in text
+    ):
+        raw = bytes.fromhex(text)
+    else:
+        raw = base64.b64decode(value, validate=True)
+    if len(raw) != byte_length or not any(raw):
+        raise ValueError(f"Expected a nonzero {byte_length}-byte context ID")
+    return raw.hex()
+
+
+def context_pair(record: dict) -> tuple[str, str]:
+    return (
+        normalized_id(record.get("traceId"), 16),
+        normalized_id(record.get("spanId"), 8),
+    )
+
+
+def validate_correlation(spans: list[dict], logs: list[dict]) -> tuple[str, int]:
+    """Require every log's trace/span pair to resolve to an exported span."""
+    if not spans or not logs:
+        raise AssertionError("Both exported spans and logs are required")
+    span_pairs = {context_pair(span) for span in spans}
+    log_pairs = [context_pair(log) for log in logs]
+    unmatched = set(log_pairs) - span_pairs
+    if unmatched:
+        raise AssertionError(f"Unmatched log trace/span context: {sorted(unmatched)}")
+    return sorted({pair[0] for pair in log_pairs})[0], len(log_pairs)
 
 
 def main() -> None:
@@ -35,16 +63,14 @@ def main() -> None:
     assert expected_names <= span_names, f"missing spans: {expected_names - span_names}"
     assert len(logs) >= 3, f"expected at least 3 logs, got {len(logs)}"
 
-    span_ids = {normalized_trace_id(span["traceId"]) for span in spans if span.get("traceId")}
-    log_ids = {normalized_trace_id(log["traceId"]) for log in logs if log.get("traceId")}
-    shared = span_ids & log_ids
-    assert shared, "No common trace ID in span and log exports"
-    assert all(len(value) == 32 for value in shared)
+    shared, matched = validate_correlation(spans, logs)
 
     print("VERIFICATION PASSED")
     print(f"Spans: {len(spans)}; logs: {len(logs)}")
     print("Span names: " + ", ".join(sorted(expected_names)))
-    print("Shared trace ID: " + sorted(shared)[0])
+    print("Shared trace ID: " + shared)
+    print(f"Trace/Span pairs matched: {matched}/{len(logs)} logs")
+    print("Every log context resolves to an exported span in the same trace.")
     print("Trace and log pipelines both exported OTLP data to local files.")
 
 
