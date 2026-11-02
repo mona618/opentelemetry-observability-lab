@@ -1,0 +1,34 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 128
+  batch:
+    timeout: 1s
+
+exporters:
+  debug:
+    verbosity: detailed
+  file/traces:
+    path: /data/traces.json
+    append: true
+  file/logs:
+    path: /data/logs.json
+    append: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug, file/traces]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug, file/logs]
+

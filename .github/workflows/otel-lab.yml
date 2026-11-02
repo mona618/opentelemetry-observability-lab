@@ -1,0 +1,52 @@
+name: OpenTelemetry observability lab
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  collector-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install OpenTelemetry SDK
+        run: python -m pip install -r requirements.txt
+      - name: A-level console spans
+        run: python basic_console.py | tee evidence/basic_console.txt
+      - name: Start Dockerized Collector
+        run: |
+          docker compose up -d
+          docker compose ps
+      - name: Send OTLP traces and logs
+        run: python otel_app.py | tee evidence/app_output.txt
+      - name: Verify both pipelines and correlation
+        run: |
+          sleep 5
+          python verify_evidence.py | tee evidence/verification.txt
+      - name: Show Collector output
+        if: always()
+        run: |
+          docker compose ps
+          docker compose logs --tail=160 otel-collector | tee evidence/collector_console.log
+          ls -lh evidence
+      - name: Upload telemetry evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: otel-evidence
+          path: |
+            evidence/basic_console.txt
+            evidence/app_output.txt
+            evidence/verification.txt
+            evidence/collector_console.log
+            evidence/traces.json
+            evidence/logs.json
+          if-no-files-found: warn
+      - name: Stop Collector
+        if: always()
+        run: docker compose down
+
