@@ -33,7 +33,10 @@ docker compose down
 
 On Windows, activate the virtual environment or use `.venv\\Scripts\\python.exe`
 for the Python commands. The `evidence/` directory is mounted at `/data` in
-the Collector container; generated telemetry is excluded from Git.
+the Collector container; generated telemetry is excluded from Git. On Linux,
+set `HOST_UID=$(id -u)` and `HOST_GID=$(id -g)` when starting Compose so the
+Collector can write to this bind mount without running as root. The Actions
+workflow sets those variables automatically.
 
 ## Automated evidence
 
