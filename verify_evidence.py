@@ -54,6 +54,28 @@ def validate_correlation(spans: list[dict], logs: list[dict]) -> tuple[str, int]
     return sorted({pair[0] for pair in log_pairs})[0], len(log_pairs)
 
 
+def validate_hierarchy(spans: list[dict]) -> int:
+    """Require one checkout root and the two expected direct children."""
+    roots = [s for s in spans if s.get("name") == "checkout.request"]
+    if len(roots) != 1:
+        raise AssertionError("Expected one checkout root")
+    root = roots[0]
+    root_trace, root_span = context_pair(root)
+    parent = root.get("parentSpanId", "")
+    if parent and any(base64.b64decode(parent) if len(parent) != 16 else bytes.fromhex(parent)):
+        raise AssertionError("Checkout must be a root span")
+    expected = {"inventory.reserve", "payment.authorize"}
+    children = [s for s in spans if s.get("name") in expected]
+    if len(children) != 2 or {s["name"] for s in children} != expected:
+        raise AssertionError("Expected inventory and payment children")
+    for child in children:
+        if context_pair(child)[0] != root_trace:
+            raise AssertionError("Child is in another trace")
+        if normalized_id(child.get("parentSpanId"), 8) != root_span:
+            raise AssertionError("Child parent ID does not match root span ID")
+    return len(children)
+
+
 def main() -> None:
     root = Path(__file__).parent / "evidence"
     spans = records(root / "traces.json", "resourceSpans", "scopeSpans", "spans")
@@ -63,6 +85,7 @@ def main() -> None:
     assert expected_names <= span_names, f"missing spans: {expected_names - span_names}"
     assert len(logs) >= 3, f"expected at least 3 logs, got {len(logs)}"
 
+    children = validate_hierarchy(spans)
     shared, matched = validate_correlation(spans, logs)
 
     print("VERIFICATION PASSED")
@@ -70,10 +93,10 @@ def main() -> None:
     print("Span names: " + ", ".join(sorted(expected_names)))
     print("Shared trace ID: " + shared)
     print(f"Trace/Span pairs matched: {matched}/{len(logs)} logs")
+    print(f"Parent/child links matched: {children}/2 children")
     print("Every log context resolves to an exported span in the same trace.")
     print("Trace and log pipelines both exported OTLP data to local files.")
 
 
 if __name__ == "__main__":
     main()
-

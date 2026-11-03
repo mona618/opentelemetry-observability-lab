@@ -2,7 +2,7 @@
 
 import unittest
 
-from verify_evidence import validate_correlation
+from verify_evidence import validate_correlation, validate_hierarchy
 
 
 TRACE_A = "1" * 32
@@ -35,6 +35,29 @@ class CorrelationGateTests(unittest.TestCase):
             validate_correlation(spans, [{"traceId": TRACE_A, "spanId": "0" * 16}])
 
 
+class HierarchyGateTests(unittest.TestCase):
+    def setUp(self):
+        self.spans = [
+            {"name": "checkout.request", "traceId": TRACE_A, "spanId": SPAN_A},
+            {"name": "inventory.reserve", "traceId": TRACE_A, "spanId": SPAN_B,
+             "parentSpanId": SPAN_A},
+            {"name": "payment.authorize", "traceId": TRACE_A, "spanId": "c" * 16,
+             "parentSpanId": SPAN_A},
+        ]
+
+    def test_valid_parent_child_links_pass(self):
+        self.assertEqual(validate_hierarchy(self.spans), 2)
+
+    def test_wrong_parent_fails(self):
+        self.spans[1]["parentSpanId"] = SPAN_B
+        with self.assertRaisesRegex(AssertionError, "parent ID"):
+            validate_hierarchy(self.spans)
+
+    def test_child_in_another_trace_fails(self):
+        self.spans[1]["traceId"] = TRACE_B
+        with self.assertRaisesRegex(AssertionError, "another trace"):
+            validate_hierarchy(self.spans)
+
+
 if __name__ == "__main__":
     unittest.main()
-
